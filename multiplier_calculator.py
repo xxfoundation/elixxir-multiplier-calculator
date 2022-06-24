@@ -40,7 +40,7 @@ def main():
     countrycode_bin_map["??"] = "NorthAmerica"  # TODO: check wiht ben on this
 
     # Read in map of wallets to country codes
-    wallet_bin_map = get_wallet_bin_map("wcm_2col.csv")
+    wallet_bin_map = get_wallet_bin_map(args["wallet_country_supplement"])
 
     # Do first pass over raw points data, returning average nodes in each bin & average normalized points in each bin
     bin_node_averages, bin_point_averages_normalized = first_pass(raw_points_lines, lower_bound, upper_bound,
@@ -194,6 +194,7 @@ def first_pass(raw_points_lines, lower_bound, upper_bound, wallet_bin_map, count
         era_bins = set()
         era_count += 1
 
+        # There are some empty dicts at the beginning of the log, skip those if they would be in the period
         if points_dict == {}:
             continue
 
@@ -232,32 +233,33 @@ def first_pass(raw_points_lines, lower_bound, upper_bound, wallet_bin_map, count
             era_points_in_bin[country_bin] += era_points  # Add val to country bin total
             era_points_in_bin["total"] += era_points
 
-        # Fill adjusted nodes in bin for this era
+        # Do adjusted nodes & points calculations for each bin
         adjusted_nodes_in_bin = {}
-        total = era_nodes_in_bin["total"]
-        for geo_bin, count in era_nodes_in_bin.items():
-            if geo_bin == "total":
-                continue
-            adjusted_nodes_in_bin[geo_bin] = count / total
-
-        # Do size adjustion for era points per bin
         size_adjusted_points_in_bin = {"total": 0}
-        for geo_bin, points in era_points_in_bin.items():
-            if geo_bin == "total":
-                continue
-            adjusted = points / adjusted_nodes_in_bin[geo_bin]
-            size_adjusted_points_in_bin[geo_bin] = adjusted
-            size_adjusted_points_in_bin["total"] += adjusted
+        total = era_nodes_in_bin["total"]
+        for geo_bin in era_bins:
+            # Fill adjusted nodes in bin for this era
+            node_count = era_nodes_in_bin[geo_bin]
+            adjusted_nodes = node_count / total
+            adjusted_nodes_in_bin[geo_bin] = adjusted_nodes
+
+            # Do size adjustion for era points per bin
+            bin_points = era_points_in_bin[geo_bin]
+            adjusted_points = bin_points / adjusted_nodes
+            size_adjusted_points_in_bin[geo_bin] = adjusted_points
+            size_adjusted_points_in_bin["total"] += adjusted_points
 
         # Normalize size adjusted numbers, accumulate totals for final average
         for geo_bin, era_points in size_adjusted_points_in_bin.items():
             if geo_bin == "total":
                 continue
-            adjusted = era_points / size_adjusted_points_in_bin["total"]
+            era_points = size_adjusted_points_in_bin[geo_bin]
+            adjusted_era_points = era_points / size_adjusted_points_in_bin["total"]
             if geo_bin not in total_points_in_bin:
                 total_points_in_bin[geo_bin] = 0
-            total_points_in_bin[geo_bin] += adjusted
+            total_points_in_bin[geo_bin] += adjusted_era_points
 
+    # Warn if any unmatched wallets
     if len(unmatched_wallets) > 0:
         print(f"Unmatched wallets in log: {unmatched_wallets}")
 
@@ -327,6 +329,8 @@ def get_args():
                         help="Timestamp for lower bound of logs to ingest")
     parser.add_argument("--upper-bound", type=str,
                         help="Timestamp for upper bound of logs to ingest")
+    parser.add_argument("--wallet-country-supplement", type=str,
+                        help="Supplemental file containing old mappings of wallet to country code")
 
     args = vars(parser.parse_args())
     log.basicConfig(format='[%(levelname)s] %(asctime)s: %(message)s',

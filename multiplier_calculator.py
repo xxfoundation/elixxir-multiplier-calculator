@@ -51,11 +51,11 @@ def main():
 
     possible_mults = {}  # Multipliers averaged with other regions, weighted by probability
     # Get average multipliers for geo bins
-    for key, value in bin_multipliers.items():
-        for okey, ovalue in bin_multipliers.items():
-            if key not in possible_mults:
-                possible_mults[key] = []
-            possible_mults[key] = possible_mults[key] + [max(value, ovalue) * bin_probabilities[okey]]
+    for geo_bin, multiplier in bin_multipliers.items():
+        for other_bin, other_multiplier in bin_multipliers.items():
+            if geo_bin not in possible_mults:
+                possible_mults[geo_bin] = []
+            possible_mults[geo_bin] = possible_mults[geo_bin] + [max(multiplier, other_multiplier) * bin_probabilities[other_bin]]
 
     avg_summed_mults = {k: sum(v) for k, v in possible_mults.items()}  # Sum the possible_mults for each bin
     # Average of sum of possible and mult for this bin
@@ -64,8 +64,8 @@ def main():
     # Max possible mult for bin
     max_mults = {k: (v + max_mult) / 2 for k, v in avg_mults.items()}
 
-    print(f"Multipliers calculated from {lower_bound.strftime(DATE_FORMAT_STRING)} to {upper_bound.strftime(DATE_FORMAT_STRING)}")
     # Output data in readable format
+    print(f"Multipliers calculated from {lower_bound.strftime(DATE_FORMAT_STRING)} to {upper_bound.strftime(DATE_FORMAT_STRING)}")
     header_cols = {"Bin": max([len(i) for i in avg_mults.keys()]) + 3,
                    "Multiplier": 15, "Avg Mult": 15, "Max mult": 15,
                    "Bin prob": 15, "Avg Nodes/bin": 15, "Avg Pts/bin": 15}
@@ -75,11 +75,10 @@ def main():
     print(header_row)
     print("-"*len(header_row))
     col_lens = list(header_cols.values())
-    for key, val in avg_mults.items():
-
-        cols = [f"{key}", f"{round(bin_multipliers[key], 5)}", f"{round(val, 5)}",
-                f"{round(max_mults[key], 5)}", f"{round(bin_probabilities[key], 5)}",
-                f"{bin_node_averages[key]}", f"{round(bin_point_averages_normalized[key], 5)}"]
+    for geo_bin, val in avg_mults.items():
+        cols = [f"{geo_bin}", f"{round(bin_multipliers[geo_bin], 5)}", f"{round(val, 5)}",
+                f"{round(max_mults[geo_bin], 5)}", f"{round(bin_probabilities[geo_bin], 5)}",
+                f"{bin_node_averages[geo_bin]}", f"{round(bin_point_averages_normalized[geo_bin], 5)}"]
 
         row = [f"{cols[i]}{' ' * (col_lens[i] - len(cols[i]))}" for i in range(len(cols))]
 

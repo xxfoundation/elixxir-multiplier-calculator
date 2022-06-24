@@ -2,7 +2,9 @@
 
 import argparse
 import ast
+import os.path
 from datetime import datetime, timedelta
+import re
 from decimal import Decimal as D
 import logging as log
 import math
@@ -17,7 +19,7 @@ def main():
 
     # Get bounds for calculation
     if not args["lower_bound"]:
-        lower_bound = datetime.strptime("2022-06-09 18:17", DATE_FORMAT_STRING)  # datetime.now() - timedelta(days=14)
+        lower_bound = datetime.now() - timedelta(days=14)
     else:
         lower_bound = args["lower_bound"]
 
@@ -32,12 +34,21 @@ def main():
         exit(1)
 
     # Read in raw points log
-    with open(args['raw_points_log'], 'r') as f:
-        raw_points_lines = f.readlines()
+    raw_points_path = args['raw_points_log']
+    if os.path.isfile(raw_points_path):
+        with open(raw_points_path, 'r') as f:
+            raw_points_lines = f.readlines()
+    elif os.path.isdir(raw_points_path):
+        raw_points_lines = []
+        for entry in os.listdir(raw_points_path):
+            ep = os.path.join(raw_points_path, entry)
+            if os.path.isfile(ep):
+                with open(ep, 'r') as f:
+                    raw_points_lines = raw_points_lines + f.readlines()
 
     # Get map of country codes to geo_bins
     countrycode_bin_map = get_countrycode_bin_map()
-    countrycode_bin_map["??"] = "NorthAmerica"  # TODO: check wiht ben on this
+    countrycode_bin_map["??"] = "NorthAmerica"
 
     # Read in map of wallets to country codes
     wallet_bin_map = get_wallet_bin_map(args["wallet_country_supplement"])
@@ -174,10 +185,14 @@ def first_pass(raw_points_lines, lower_bound, upper_bound, wallet_bin_map, count
 
     # Do first pass through lines
     for line in raw_points_lines:
+        match = re.search(r"^\[\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d\.\d\d\d\d\d\d]", line)
+        if not match:
+            continue
+
         # Split line into timestamp & dictionary
-        split_ind = line.find(']')
-        ts_raw = line[1:split_ind]
-        points_dict_raw = line[split_ind + 2:-1]
+        split_ind = match.span()[1]
+        ts_raw = match.group(0).strip("[]")
+        points_dict_raw = line[split_ind + 1:-1]
 
         # Parse timestamp to datetime object for easier use
         era = datetime.strptime(ts_raw, "%Y-%m-%d %H:%M:%S.%f")
@@ -198,18 +213,23 @@ def first_pass(raw_points_lines, lower_bound, upper_bound, wallet_bin_map, count
             continue
 
         # Loop through points dict for this period
-        for key, era_points in points_dict.items():
-            parts = key.split(",")
-            wallet = parts[0]
-            if len(parts) == 1:
+        for wallet, val in points_dict.items():
+            if type(val) == list:
+                era_points = val[0]
+                country = val[1]
+            elif type(val) == int:
+                era_points = val
                 if wallet not in wallet_bin_map:
                     unmatched_wallets.add(wallet)
                     country = "??"
                 else:
                     country = wallet_bin_map[wallet]
             else:
-                country = parts[2]
+                print(f"Unknown type in points dict {val}")
+                exit(1)
 
+            if era_points == 0:
+                continue
             # Get bin for country from dict parsed from git
             country_bin = countrycode_bin_map[country]
 

@@ -12,6 +12,8 @@ import logging as log
 import math
 from prettytable import PrettyTable
 from urllib.request import urlopen
+import psycopg2
+import getpass
 
 COUNTRY_MAPPING_URL = "https://git.xx.network/xx_network/primitives/-/raw/release/region/country.go"
 DATE_FORMAT_STRING = "%Y-%m-%d %H:%M"
@@ -43,12 +45,25 @@ def get_args():
                         help="Supplemental file containing old mappings of wallet to country code")
     parser.add_argument("--json", type=str, help="Path for JSON output")
     parser.add_argument("--csv", type=str, help="Path for CSV output")
+    parser.add_argument("--historical", action='store_true', help="Run historical rounds")
+    parser.add_argument("-a", "--host", metavar="host", type=str,
+                        help="Database server host for attempted connection")
+    parser.add_argument("-p", "--port", type=int,
+                        help="Port for database connection")
+    parser.add_argument("-d", "--db", type=str,
+                        help="Database name")
+    parser.add_argument("-U", "--user",  type=str,
+                        help="Username for connecting to database")
 
     args = vars(parser.parse_args())
     log.basicConfig(format='[%(levelname)s] %(asctime)s: %(message)s',
                     level=log.DEBUG if args['verbose'] else log.INFO,
                     datefmt='%d-%b-%y %H:%M:%S',
                     filename=args["log"])
+
+    print(args)
+    if args["host"]:
+        args["pass"] = getpass.getpass("Enter database password: ")
 
     if args["lower_bound"]:
         args["lower_bound"] = datetime.strptime(args["lower_bound"], DATE_FORMAT_STRING)
@@ -418,7 +433,6 @@ def output_raw(rows):
 def main():
     args = get_args()
 
-    # Read in raw points log
     raw_points_lines = get_raw_points_lines(args['raw_points_log'])
 
     # Get map of country codes to geo_bins

@@ -10,8 +10,12 @@ import logging as log
 import math
 from urllib.request import urlopen
 
+import requests
+import xmltodict
+
 COUNTRY_MAPPING_URL = "https://git.xx.network/xx_network/primitives/-/raw/release/region/country.go"
 DATE_FORMAT_STRING = "%Y-%m-%d %H:%M"
+log_folder_url = 'https://elixxir-bins.s3.us-west-1.amazonaws.com/'
 
 
 def main():
@@ -34,17 +38,19 @@ def main():
         exit(1)
 
     # Read in raw points log
-    raw_points_path = args['raw_points_log']
-    if os.path.isfile(raw_points_path):
-        with open(raw_points_path, 'r') as f:
-            raw_points_lines = f.readlines()
-    elif os.path.isdir(raw_points_path):
-        raw_points_lines = []
-        for entry in os.listdir(raw_points_path):
-            ep = os.path.join(raw_points_path, entry)
-            if os.path.isfile(ep):
-                with open(ep, 'r') as f:
-                    raw_points_lines = raw_points_lines + f.readlines()
+    # raw_points_path = args['raw_points_log']
+    # if os.path.isfile(raw_points_path):
+    #     with open(raw_points_path, 'r') as f:
+    #         raw_points_lines = f.readlines()
+    # elif os.path.isdir(raw_points_path):
+    #     raw_points_lines = []
+    #     for entry in os.listdir(raw_points_path):
+    #         ep = os.path.join(raw_points_path, entry)
+    #         if os.path.isfile(ep):
+    #             with open(ep, 'r') as f:
+    #                 raw_points_lines = raw_points_lines + f.readlines()
+    raw_points_lines = get_raw_point_lines(upper_bound, lower_bound)
+    print(f"Got {len(raw_points_lines)} lines")
 
     # Get map of country codes to geo_bins
     countrycode_bin_map = get_countrycode_bin_map()
@@ -174,6 +180,8 @@ def first_pass(raw_points_lines, lower_bound, upper_bound, wallet_bin_map, count
     :param dict[str]str countrycode_bin_map:
     :return:
     """
+    upper_date = None
+    lower_date = None
     # Establish dictionaries to fill in first pass
     # The goal of this pass is averages, so the data needed for the end step is totals per bin & era count
     total_nodes_in_bin = {}
@@ -192,7 +200,7 @@ def first_pass(raw_points_lines, lower_bound, upper_bound, wallet_bin_map, count
         # Split line into timestamp & dictionary
         split_ind = match.span()[1]
         ts_raw = match.group(0).strip("[]")
-        points_dict_raw = line[split_ind + 1:-1]
+        points_dict_raw = line[split_ind + 1:]
 
         # Parse timestamp to datetime object for easier use
         era = datetime.strptime(ts_raw, "%Y-%m-%d %H:%M:%S.%f")
@@ -201,8 +209,22 @@ def first_pass(raw_points_lines, lower_bound, upper_bound, wallet_bin_map, count
         if not lower_bound <= era <= upper_bound:
             continue
 
+        if not upper_date:
+            upper_date = era
+        elif era > upper_date:
+            upper_date = era
+
+        if not lower_date:
+            lower_date = era
+        elif era < lower_date:
+            lower_date = era
+
         # Use python abstract syntax tree lib to parse rest of line to dict
-        points_dict = ast.literal_eval(points_dict_raw)
+        try:
+            points_dict = ast.literal_eval(points_dict_raw)
+        except Exception as e:
+            print(f"Failed to parse {points_dict_raw}: {e}")
+            exit(1)
         era_nodes_in_bin = {"total": 0}  # Create era_bins entry for this period
         era_points_in_bin = {"total": 0}  # Create era_bin_points entry for this period
         era_bins = set()
@@ -290,6 +312,7 @@ def first_pass(raw_points_lines, lower_bound, upper_bound, wallet_bin_map, count
     max_avg = max(bin_point_averages.values())
     bin_point_averages_normalized = {geo_bin: point_avg / max_avg for geo_bin, point_avg in bin_point_averages.items()}
 
+    print(f"Lower: {lower_date} [{lower_bound}], Upper: {upper_date} [{upper_bound}]")
     # Return bin node averages & normalized bin point averages
     return bin_node_averages, bin_point_averages_normalized
 
@@ -363,6 +386,46 @@ def get_args():
         args["upper_bound"] = datetime.strptime(args["upper_bound"], DATE_FORMAT_STRING)
 
     return args
+
+
+def get_raw_point_lines(upper_bound, lower_bound):
+    available_logs = get_available_logs()
+    ordered = sorted(available_logs.keys())
+    to_download = [i for i in ordered if upper_bound > i > lower_bound]
+    lower_index = ordered.index(to_download[0])
+    upper_index = ordered.index(to_download[-1])
+    if len(ordered) >= upper_index + 2:
+        upper_index += 2
+    else:
+        upper_index = -1
+    to_download = [available_logs[i] for i in ordered[lower_index:upper_index]]
+    download_log(to_download[0])
+    all_lines = []
+    for i in to_download:
+        lines = download_log(i)
+        all_lines = all_lines + lines
+    return all_lines
+
+
+def download_log(key):
+    resp = requests.get(log_folder_url + key)
+    if resp.status_code != 200:
+        print(resp.status_code)
+        exit(1)
+    return resp.text.split('\n')
+
+
+def get_available_logs():
+    resp = requests.get(log_folder_url, params={'list-type': 2, 'prefix': 'team-multiplier/mainnet'})
+    body = resp.text
+    parsed = xmltodict.parse(body)
+    resp = {}
+    for i in parsed['ListBucketResult']['Contents']:
+        key = i['Key']
+        uploaded = datetime.strptime(i['LastModified'][:-5], '%Y-%m-%dT%H:%M:%S')
+        resp[uploaded] = key
+    return resp
+
 
 
 if __name__ == "__main__":

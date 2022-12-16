@@ -389,25 +389,42 @@ def get_args():
 
 
 def get_raw_point_lines(upper_bound, lower_bound):
+    """
+    get_raw_point_lines gets data from raw points logs generated between upper_bound and lower_bound
+    :param datetime upper_bound: higher bound for included lines
+    :param datetime lower_bound: lower bound for included lines
+    :return list[str]:
+    """
+    # Get list of available logs, sort by timestamp
     available_logs = get_available_logs()
     ordered = sorted(available_logs.keys())
+
+    # Determine which logs to download based on timestamp
     to_download = [i for i in ordered if upper_bound > i > lower_bound]
+
+    # Pad upper index by up to two log files to ensure all relevant logs are downloaded
     lower_index = ordered.index(to_download[0])
     upper_index = ordered.index(to_download[-1])
     if len(ordered) >= upper_index + 2:
         upper_index += 2
     else:
         upper_index = -1
-    to_download = [available_logs[i] for i in ordered[lower_index:upper_index]]
-    download_log(to_download[0])
+
+    # Get and aggregate log lines
+    download_keys = [available_logs[i] for i in ordered[lower_index:upper_index]]
     all_lines = []
-    for i in to_download:
+    for i in download_keys:
         lines = download_log(i)
         all_lines = all_lines + lines
     return all_lines
 
 
 def download_log(key):
+    """
+    download_log downloads the contents of a raw points log file from s3
+    :param str key: s3 key for file to download
+    :return list(str):
+    """
     resp = requests.get(log_folder_url + key)
     if resp.status_code != 200:
         print(resp.status_code)
@@ -416,6 +433,10 @@ def download_log(key):
 
 
 def get_available_logs():
+    """
+    get_available_logs returns a list of available raw points log files by upload date
+    :return dict[datetime]str:
+    """
     resp = requests.get(log_folder_url, params={'list-type': 2, 'prefix': 'team-multiplier/mainnet'})
     body = resp.text
     parsed = xmltodict.parse(body)

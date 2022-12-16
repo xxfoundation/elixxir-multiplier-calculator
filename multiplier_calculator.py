@@ -405,9 +405,11 @@ def get_raw_point_lines(upper_bound, lower_bound):
     # Pad upper index by up to two log files to ensure all relevant logs are downloaded
     lower_index = ordered.index(to_download[0])
     upper_index = ordered.index(to_download[-1])
-    if len(ordered) >= upper_index + 2:
-        upper_index += 2
+    log_padding = 2
+    if len(ordered) >= upper_index + log_padding:
+        upper_index += log_padding
     else:
+        # If there aren't two more logs, just take up to the most recent
         upper_index = -1
 
     # Get and aggregate log lines
@@ -446,7 +448,6 @@ def get_available_logs():
         uploaded = datetime.strptime(i['LastModified'][:-5], '%Y-%m-%dT%H:%M:%S')
         resp[uploaded] = key
     return resp
-
 
 
 if __name__ == "__main__":
